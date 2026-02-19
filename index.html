@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>FiberDraft - NDU 009 & BoM</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        :root { --primary: #2563eb; --primary-hover: #1d4ed8; --dark: #0f172a; --panel: #1e293b; --text: #f1f5f9; --accent: #fbbf24; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--dark); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+        
+        .sidebar { width: 420px; background: var(--panel); border-right: 1px solid #334155; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.3); }
+        .viewport-container { flex-grow: 1; position: relative; background: #111827; overflow: hidden; }
+        canvas { cursor: crosshair; display: block; }
+
+        .card { background: #334155; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--primary); transition: transform 0.2s; }
+        .card:hover { transform: translateX(2px); }
+        
+        h2 { margin: 0 0 20px 0; color: white; font-size: 22px; display: flex; align-items: center; gap: 10px; }
+        h2::before { content: ''; font-size: 18px; }
+        h3 { margin-top: 0; color: #60a5fa; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        label { display: block; font-size: 11px; font-weight: bold; margin: 8px 0 4px; color: #94a3b8; }
+        select, input { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 6px; font-size: 13px; outline: none; transition: border-color 0.2s; }
+        select:focus { border-color: var(--primary); }
+        
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; transition: all 0.2s; }
+        .btn-blue { background: var(--primary); color: white; }
+        .btn-blue:hover { background: var(--primary-hover); }
+        .btn-red { background: #e11d48; color: white; margin-top: 20px; }
+        .btn-red:hover { background: #be123c; box-shadow: 0 4px 12px rgba(225, 29, 72, 0.3); }
+        
+        .legend-box { position: absolute; top: 20px; right: 20px; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 8px; font-size: 12px; border: 1px solid #475569; backdrop-filter: blur(4px); }
+        .legend-item { display: flex; align-items: center; margin-bottom: 8px; }
+        .symbol { width: 14px; height: 14px; margin-right: 10px; border: 1px solid #fff; }
+
+        .bom-table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 10px; }
+        .bom-table th { text-align: left; padding: 8px; color: #94a3b8; border-bottom: 2px solid #475569; }
+        .bom-table td { padding: 8px; border-bottom: 1px solid #475569; }
+        .qtd-badge { background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        
+        #alca-info { font-weight: bold; color: var(--accent); background: #0f172a; padding: 8px; border-radius: 6px; margin-top: 10px; text-align: center; border: 1px dashed var(--accent); }
+
+        .credits { margin-top: auto; padding: 15px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #334155; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>FiberDraft</h2>
+    
+    <div class="card">
+        <h3>Identificação do Projeto</h3>
+        <label>Nome do Projeto / Cliente:</label>
+        <input type="text" id="proj-nome" placeholder="Ex: Expansão Centro - Lote 01">
+    </div>
+
+    <div class="card">
+        <h3>Configuração da Fibra (NDU 009)</h3>
+        <label>Tecnologia do Cabo:</label>
+        <select id="cabo-tipo" onchange="calcularBoM()">
+            <option value="ASU">Cabo Óptico ASU (Tubo Único)</option>
+            <option value="AS">Cabo Óptico AS (Auto Sustentado Multitubo)</option>
+        </select>
+        <label>Quantidade de Fibras:</label>
+        <select id="cabo-fo" onchange="calcularBoM()">
+            <option value="6">06 Fibras Ópticas</option>
+            <option value="12">12 Fibras Ópticas</option>
+            <option value="24">24 Fibras Ópticas</option>
+            <option value="36">36 Fibras Ópticas</option>
+            <option value="48">48 Fibras Ópticas</option>
+            <option value="72">72 Fibras Ópticas</option>
+        </select>
+        <div id="alca-info">Alça: Selecione um cabo</div>
+    </div>
+
+    <div id="editor-poste" style="display:none;" class="card">
+        <h3>Edição: Poste #<span id="p-id"></span></h3>
+        <label>Tipo de Estrutura:</label>
+        <select id="p-tipo" onchange="updatePoste()">
+            <option value="DT">Concreto Duplo T (DT)</option>
+            <option value="CC">Concreto Circular (CC)</option>
+        </select>
+        <label>Função na Rede:</label>
+        <select id="p-funcao" onchange="updatePoste()">
+            <option value="passante">Suspensão (Passante)</option>
+            <option value="ancoragem">Ancoragem (Início/Fim)</option>
+            <option value="curva">Curva de Rede (Ângulo)</option>
+            <option value="reserva">Reserva Técnica</option>
+        </select>
+        
+        <div id="ctrl-direcao" style="display:none;">
+            <label>Direção da Curva:</label>
+            <select id="p-direcao" onchange="updatePoste()">
+                <option value="N">Norte ↑</option>
+                <option value="S">Sul ↓</option>
+                <option value="L">Leste →</option>
+                <option value="O">Oeste ←</option>
+            </select>
+        </div>
+        <button class="btn" onclick="deletarPoste()" style="background:#4b5563; font-size:11px; color: #ff9999;">× Remover Este Poste</button>
+    </div>
+
+    <div class="card" style="flex-grow: 1;">
+        <h3>Lista de Materiais (BoM)</h3>
+        <table class="bom-table" id="bomTable">
+            <thead>
+                <tr>
+                    <th>Item Descritivo</th>
+                    <th style="text-align:right">Qtd</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <button class="btn btn-red" onclick="gerarPDF()">GERAR PDF ESTRUTURADO</button>
+
+    <div class="credits">Desenvolvido por <strong>Brito Damasceno</strong></div>
+</div>
+
+<div class="viewport-container" id="container">
+    <canvas id="canvas"></canvas>
+    <div class="legend-box">
+        <div style="font-weight:bold; border-bottom:1px solid #444; margin-bottom:10px; padding-bottom:4px; color: #60a5fa;">LEGENDA TÉCNICA</div>
+        <div class="legend-item"><div class="symbol" style="background:#94a3b8;"></div> Poste Duplo T</div>
+        <div class="legend-item"><div class="symbol" style="background:#60a5fa; border-radius:50%;"></div> Poste Circular</div>
+        <div class="legend-item"><div class="symbol" style="border:2px solid #ef4444;"></div> Ancoragem / Curva</div>
+        <div class="legend-item"><div class="symbol" style="border:2px solid #eab308; border-radius:50%;"></div> Reserva Técnica</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let postes = [];
+    let selecionado = null;
+    let arrastando = false;
+
+    function getAlcaSpecs() {
+        const tipo = document.getElementById('cabo-tipo').value;
+        const fo = parseInt(document.getElementById('cabo-fo').value);
+        if (tipo === 'ASU') {
+            return (fo <= 12) ? { cor: 'Verde', mm: '6.4 a 7.4mm' } : { cor: 'Amarela', mm: '7.4 a 8.6mm' };
+        } else {
+            if (fo <= 12) return { cor: 'Amarela', mm: '7.4 a 8.6mm' };
+            if (fo <= 36) return { cor: 'Azul', mm: '8.6 a 9.8mm' };
+            return { cor: 'Branca', mm: '9.8 a 11.0mm' };
+        }
+    }
+
+    function resize() {
+        canvas.width = document.getElementById('container').clientWidth;
+        canvas.height = document.getElementById('container').clientHeight;
+        desenhar();
+    }
+    window.onresize = resize;
+    resize();
+
+    canvas.addEventListener('mousedown', e => {
+        const x = e.offsetX, y = e.offsetY;
+        const idx = postes.findIndex(p => Math.hypot(p.x - x, p.y - y) < 20);
+        if (idx !== -1) {
+            selecionado = idx; arrastando = true; mostrarEditor();
+        } else {
+            postes.push({ x, y, tipo: 'DT', funcao: 'passante', direcao: 'L' });
+            selecionado = postes.length - 1; mostrarEditor();
+        }
+        desenhar(); calcularBoM();
+    });
+
+    canvas.addEventListener('mousemove', e => {
+        if (arrastando) {
+            postes[selecionado].x = e.offsetX;
+            postes[selecionado].y = e.offsetY;
+            desenhar();
+        }
+    });
+
+    window.addEventListener('mouseup', () => { arrastando = false; calcularBoM(); });
+
+    function mostrarEditor() {
+        const p = postes[selecionado];
+        document.getElementById('editor-poste').style.display = 'block';
+        document.getElementById('p-id').innerText = selecionado + 1;
+        document.getElementById('p-tipo').value = p.tipo;
+        document.getElementById('p-funcao').value = p.funcao;
+        document.getElementById('p-direcao').value = p.direcao;
+        document.getElementById('ctrl-direcao').style.display = p.funcao === 'curva' ? 'block' : 'none';
+    }
+
+    function updatePoste() {
+        const p = postes[selecionado];
+        p.tipo = document.getElementById('p-tipo').value;
+        p.funcao = document.getElementById('p-funcao').value;
+        p.direcao = document.getElementById('p-direcao').value;
+        document.getElementById('ctrl-direcao').style.display = p.funcao === 'curva' ? 'block' : 'none';
+        desenhar(); calcularBoM();
+    }
+
+    function deletarPoste() {
+        postes.splice(selecionado, 1); selecionado = null;
+        document.getElementById('editor-poste').style.display = 'none';
+        desenhar(); calcularBoM();
+    }
+
+    function desenhar() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        postes.forEach((p, i) => {
+            if (i > 0) {
+                ctx.beginPath(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
+                ctx.moveTo(postes[i-1].x, postes[i-1].y);
+                ctx.lineTo(p.x, p.y); ctx.stroke();
+                const dist = Math.round(Math.hypot(p.x - postes[i-1].x, p.y - postes[i-1].y));
+                ctx.fillStyle = "#60a5fa"; ctx.font = "bold 11px sans-serif";
+                ctx.fillText(dist + "m", (p.x + postes[i-1].x)/2, (p.y + postes[i-1].y)/2 - 10);
+            }
+        });
+
+        postes.forEach((p, i) => {
+            ctx.fillStyle = (i === selecionado) ? '#ffffff' : (p.tipo === 'DT' ? '#94a3b8' : '#60a5fa');
+            if (p.tipo === 'DT') ctx.fillRect(p.x-10, p.y-10, 20, 20);
+            else { ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, Math.PI*2); ctx.fill(); }
+            if (p.funcao === 'ancoragem' || p.funcao === 'curva') {
+                ctx.strokeStyle = '#ef4444'; ctx.strokeRect(p.x-15, p.y-15, 30, 30);
+            }
+            if (p.funcao === 'reserva') {
+                ctx.strokeStyle = '#eab308'; ctx.beginPath(); ctx.arc(p.x, p.y, 18, 0, Math.PI*2); ctx.stroke();
+            }
+            ctx.fillStyle = "white"; ctx.fillText("P"+(i+1), p.x-8, p.y+32);
+        });
+    }
+
+    function calcularBoM() {
+        const specs = getAlcaSpecs();
+        document.getElementById('alca-info').innerText = `ALÇA: ${specs.cor} (${specs.mm})`;
+        let mat = {};
+        const add = (n, q) => mat[n] = (mat[n] || 0) + q;
+        let distTotal = 0;
+
+        postes.forEach((p, i) => {
+            add('Plaqueta de Identificação Amarela (NDU 009)', 1);
+            let bapDesc = p.tipo === 'DT' ? 'BAP-2 (Poste DT)' : 'BAP-3 (Poste Circular)';
+            if (p.funcao === 'passante') {
+                add(bapDesc, 1); add('Suporte SRB', 1); add('Parafuso M12x35mm', 1); add('Suporte FDS-60', 1);
+            } else if (p.funcao === 'reserva') {
+                add(bapDesc, 2); add('Cruzeta de Reserva Técnica', 1);
+            } else {
+                add(bapDesc, 1); add('Suporte SRB', 1); add('Parafuso M12x35mm', 1); add('Olhal Reto M12', 1);
+                add(`Alça Preformada ${specs.cor} (${specs.mm})`, 1);
+            }
+            if(i > 0) distTotal += Math.hypot(p.x - postes[i-1].x, p.y - postes[i-1].y);
+        });
+        if (distTotal > 0) add('Cabo Óptico (Metros + 10% folga)', Math.ceil(distTotal * 1.1));
+
+        const tbody = document.querySelector('#bomTable tbody');
+        tbody.innerHTML = '';
+        for (let m in mat) tbody.innerHTML += `<tr><td>${m}</td><td style="text-align:right"><span class="qtd-badge">${mat[m]}</span></td></tr>`;
+    }
+
+    async function gerarPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const specs = getAlcaSpecs();
+        const projNome = document.getElementById('proj-nome').value || "Não informado";
+
+        // CABEÇALHO ESTRUTURADO
+        doc.setFillColor(30, 41, 59); doc.rect(0, 0, 210, 25, 'F');
+        doc.setFontSize(20); doc.setTextColor(255, 255, 255); doc.text("FiberDraft - Relatório BoM", 15, 17);
+        
+        doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+        doc.setFont("helvetica", "bold"); doc.text("PROJETO:", 15, 35);
+        doc.setFont("helvetica", "normal"); doc.text(projNome, 40, 35);
+
+        // MAPA COM MOLDURA
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        doc.setDrawColor(37, 99, 235); doc.setLineWidth(0.5); doc.rect(14, 45, 182, 82);
+        doc.addImage(imgData, 'PNG', 15, 46, 180, 80);
+
+        // TABELA COM GRADE (BOM)
+        doc.setFontSize(12); doc.setTextColor(37, 99, 235); doc.setFont("helvetica", "bold");
+        doc.text("LISTA DE MATERIAIS DETALHADA", 15, 140);
+
+        let y = 150;
+        // Header da Tabela
+        doc.setFillColor(37, 99, 235); doc.rect(15, y-5, 180, 8, 'F');
+        doc.setTextColor(255, 255, 255); doc.setFontSize(9);
+        doc.text("DESCRIÇÃO DO ITEM", 18, y); doc.text("QTD", 180, y);
+
+        y += 8;
+        doc.setTextColor(0, 0, 0); doc.setFont("helvetica", "normal");
+
+        document.querySelectorAll('#bomTable tbody tr').forEach((tr, i) => {
+            // Fundo zebrado
+            if(i % 2 === 0) { doc.setFillColor(245, 247, 250); doc.rect(15, y-5, 180, 8, 'F'); }
+            
+            // Bordas da Linha
+            doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.1); doc.rect(15, y-5, 180, 8);
+
+            const desc = tr.cells[0].innerText;
+            const qtd = tr.cells[1].innerText;
+
+            doc.text(desc, 18, y);
+            doc.setFont("helvetica", "bold"); doc.text(qtd, 188, y, {align: 'right'});
+            doc.setFont("helvetica", "normal");
+            y += 8;
+            if (y > 280) { doc.addPage(); y = 20; }
+        });
+
+        doc.save(`Relatorio_${projNome.replace(/\s/g, '_')}.pdf`);
+    }
+</script>
+</body>
+</html>
