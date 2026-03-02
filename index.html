@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>FiberDraft Pro - Drag, Save & BAP Expert</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <style>
+        :root { --primary: #2563eb; --primary-hover: #1d4ed8; --dark: #0f172a; --panel: #1e293b; --text: #f1f5f9; --accent: #fbbf24; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--dark); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+        
+        .sidebar { width: 420px; background: var(--panel); border-right: 1px solid #334155; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 4px 0 15px rgba(0,0,0,0.3); z-index: 1000; }
+        #map { flex-grow: 1; background: #111827; }
+
+        .card { background: #334155; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--primary); }
+        h2 { margin: 0 0 15px 0; color: white; font-size: 20px; border-bottom: 1px solid #475569; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        h3 { margin-top: 0; color: #60a5fa; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        label { display: block; font-size: 11px; font-weight: bold; margin: 12px 0 5px; color: #94a3b8; }
+        select, input { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 6px; font-size: 14px; box-sizing: border-box; outline: none; }
+        
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-blue { background: var(--primary); color: white; }
+        .btn-green { background: #10b981; color: white; }
+        .btn-outline { background: transparent; border: 1px solid #475569; color: #94a3b8; font-size: 11px; padding: 8px; }
+        .btn-red { background: #e11d48; color: white; margin-top: 20px; }
+        
+        .bom-table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 10px; }
+        .bom-table th { text-align: left; padding: 8px; color: #94a3b8; border-bottom: 2px solid #475569; }
+        .bom-table td { padding: 8px; border-bottom: 1px solid #475569; }
+        .qtd-badge { background: var(--primary); color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        
+        /* Marcadores */
+        .marker-pin { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 2px solid #fff; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+        .shape-circle { border-radius: 50%; }
+        .shape-square { border-radius: 0%; }
+        .shape-diamond { transform: rotate(45deg); }
+        .marker-label { position: absolute; top: -20px; font-weight: bold; color: white; background: rgba(0,0,0,0.7); padding: 1px 4px; border-radius: 3px; font-size: 10px; white-space: nowrap; pointer-events: none; }
+
+        .legend { background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 8px; color: white; border: 1px solid #475569; font-size: 11px; }
+        .legend i { width: 12px; height: 12px; float: left; margin-right: 8px; border: 1px solid #fff; }
+
+        /* Estilo dos Rótulos de Distância */
+        .dist-label { background: white; color: black; border: 1px solid #2563eb; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold; white-space: nowrap; }
+
+        .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>FiberDraft Pro</h2>
+
+    <div class="toolbar">
+        <button class="btn btn-outline" onclick="exportarProjeto()">💾 Salvar Projeto</button>
+        <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">📂 Abrir Projeto</button>
+        <input type="file" id="importFile" style="display:none" accept=".fiber" onchange="importarProjeto(event)">
+    </div>
+    
+    <div class="card">
+        <h3>Configuração do Cabo</h3>
+        <label>Tipo de Cabo:</label>
+        <select id="cabo-tipo" onchange="calcularBoM()">
+            <option value="ASU">Cabo ASU (Tubo Único)</option>
+            <option value="AS80">Cabo AS80</option>
+            <option value="AS120">Cabo AS120</option>
+        </select>
+        <label>Fibras:</label>
+        <select id="cabo-fo" onchange="calcularBoM()">
+            <option value="6">06 FO</option>
+            <option value="12">12 FO</option>
+            <option value="24">24 FO</option>
+        </select>
+        <div id="alca-info">Arraste os postes para ajustar a rota</div>
+    </div>
+
+    <div id="editor-poste" style="display:none;" class="card">
+        <h3>EDIÇÃO: POSTE #<span id="p-label-id"></span></h3>
+        <label>DAN (Diâmetro Nominal mm):</label>
+        <input type="number" id="p-dan" value="190" oninput="updatePoste()">
+        <label>Função / Ferragem:</label>
+        <select id="p-funcao" onchange="updatePoste()">
+            <option value="passante">Passante (Suspensão)</option>
+            <option value="curva">Curva (Desvio)</option>
+            <option value="ancoragem_inicio">Ancoragem (Início)</option>
+            <option value="ancoragem_fim">Ancoragem (Fim)</option>
+            <option value="ancoragem_inter">Ancoragem Intermediária</option>
+            <option value="ceo">Caixa de Emenda (CEO)</option>
+            <option value="reserva">Reserva Técnica</option>
+        </select>
+        <button class="btn" onclick="deletarPoste()" style="background:#4b5563; font-size:11px;">× Remover Poste</button>
+    </div>
+
+    <div class="card" style="flex-grow: 1;">
+        <h3>Lista de Materiais (BoM)</h3>
+        <div style="max-height: 250px; overflow-y: auto;">
+            <table class="bom-table" id="bomTable">
+                <thead><tr><th>Descrição</th><th style="text-align:right">Qtd</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <button class="btn btn-red" onclick="window.print()">GERAR PDF / IMPRIMIR</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+<script>
+    let map, postes = [], linhaRede, distLabels = [], selecionadoIdx = null;
+
+    const configSimbologia = {
+        passante: { cor: '#94a3b8', shape: 'shape-circle' },
+        curva: { cor: '#ef4444', shape: 'shape-diamond' },
+        ancoragem_inicio: { cor: '#ef4444', shape: 'shape-square' },
+        ancoragem_fim: { cor: '#ef4444', shape: 'shape-square' },
+        ancoragem_inter: { cor: '#ef4444', shape: 'shape-square' },
+        ceo: { cor: '#a855f7', shape: 'shape-circle' },
+        reserva: { cor: '#eab308', shape: 'shape-circle' }
+    };
+
+    function initMap() {
+        const satelite = L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 21, subdomains:['mt0','mt1','mt2','mt3']
+        });
+
+        map = L.map('map', { center: [-23.5505, -46.6333], zoom: 18, layers: [satelite] });
+
+        L.Control.geocoder({ defaultMarkGeocode: false, placeholder: "Buscar logradouro..." })
+            .on('markgeocode', e => map.fitBounds(e.geocode.bbox))
+            .addTo(map);
+
+        linhaRede = L.polyline([], {color: '#3b82f6', weight: 3, dashArray: '5, 10'}).addTo(map);
+        map.on('click', e => adicionarPoste(e.latlng));
+        
+        const legend = L.control({position: 'bottomright'});
+        legend.onAdd = () => {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = '<b>LEGENDA</b><br>' +
+                '<i style="background:#94a3b8; border-radius:50%"></i> Passante<br>' +
+                '<i style="background:#ef4444; border-radius:0%"></i> Ancoragens<br>' +
+                '<i style="background:#a855f7; border-radius:50%"></i> CEO';
+            return div;
+        };
+        legend.addTo(map);
+    }
+
+    function criarIcone(funcao, id) {
+        const config = configSimbologia[funcao];
+        return L.divIcon({
+            className: 'custom-icon',
+            html: `<div class="marker-pin ${config.shape}" style="background:${config.cor}">
+                     <span class="marker-label">P${id}</span>
+                   </div>`,
+            iconSize: [22, 22], iconAnchor: [11, 11]
+        });
+    }
+
+    function adicionarPoste(latlng, dadosExistentes = null) {
+        const idVisivel = (dadosExistentes) ? dadosExistentes.idVisivel : postes.length + 1;
+        
+        const poste = {
+            id: postes.length,
+            idVisivel: idVisivel,
+            latlng: latlng,
+            dan: dadosExistentes ? dadosExistentes.dan : 190,
+            funcao: dadosExistentes ? dadosExistentes.funcao : 'passante',
+            marker: L.marker(latlng, {
+                icon: criarIcone(dadosExistentes ? dadosExistentes.funcao : 'passante', idVisivel),
+                draggable: true
+            }).addTo(map)
+        };
+
+        // Evento de Arrastar Atualizado
+        poste.marker.on('drag', function(event) {
+            poste.latlng = event.target.getLatLng();
+            atualizarLinha();
+        });
+
+        poste.marker.on('dragend', function() {
+            calcularBoM();
+        });
+
+        poste.marker.on('click', (ev) => {
+            L.DomEvent.stopPropagation(ev);
+            abrirEditor(poste.id);
+        });
+
+        postes.push(poste);
+        atualizarLinha();
+        calcularBoM();
+    }
+
+    function abrirEditor(idx) {
+        selecionadoIdx = idx;
+        const p = postes[idx];
+        document.getElementById('editor-poste').style.display = 'block';
+        document.getElementById('p-label-id').innerText = p.idVisivel;
+        document.getElementById('p-dan').value = p.dan;
+        document.getElementById('p-funcao').value = p.funcao;
+    }
+
+    function updatePoste() {
+        if (selecionadoIdx === null) return;
+        const p = postes[selecionadoIdx];
+        p.dan = parseInt(document.getElementById('p-dan').value);
+        p.funcao = document.getElementById('p-funcao').value;
+        p.marker.setIcon(criarIcone(p.funcao, p.idVisivel));
+        calcularBoM();
+    }
+
+    function deletarPoste() {
+        if (selecionadoIdx === null) return;
+        map.removeLayer(postes[selecionadoIdx].marker);
+        postes.splice(selecionadoIdx, 1);
+        selecionadoIdx = null;
+        document.getElementById('editor-poste').style.display = 'none';
+        
+        postes.forEach((p, i) => {
+            p.id = i;
+            p.idVisivel = i + 1;
+            p.marker.setIcon(criarIcone(p.funcao, p.idVisivel));
+        });
+        atualizarLinha();
+        calcularBoM();
+    }
+
+    function atualizarLinha() {
+        linhaRede.setLatLngs(postes.map(p => p.latlng));
+        
+        // Limpar rótulos de distância antigos
+        distLabels.forEach(label => map.removeLayer(label));
+        distLabels = [];
+
+        // Adicionar novos rótulos
+        for (let i = 0; i < postes.length - 1; i++) {
+            const p1 = postes[i].latlng;
+            const p2 = postes[i+1].latlng;
+            const dist = p1.distanceTo(p2).toFixed(1);
+            
+            const middle = L.latLng((p1.lat + p2.lat) / 2, (p1.lng + p2.lng) / 2);
+            const label = L.marker(middle, {
+                icon: L.divIcon({
+                    className: 'dist-label',
+                    html: `${dist}m`,
+                    iconSize: [40, 20]
+                }),
+                interactive: false
+            }).addTo(map);
+            distLabels.push(label);
+        }
+    }
+
+    function calcularBoM() {
+        const tipoCabo = document.getElementById('cabo-tipo').value;
+        const fo = parseInt(document.getElementById('cabo-fo').value);
+        let specs = (tipoCabo === 'ASU') ? 
+            (fo <= 12 ? {cor:'Verde'} : {cor:'Amarela'}) : 
+            (fo <= 12 ? {cor:'Amarela'} : {cor:'Azul'});
+
+        document.getElementById('alca-info').innerText = `ALÇA: ${specs.cor} | ARRASTE OS POSTES PARA AJUSTAR`;
+        
+        let mat = {};
+        const add = (n, q) => mat[n] = (mat[n] || 0) + q;
+        let distTotal = 0;
+
+        postes.forEach((p, i) => {
+            add('Plaqueta NDU 009', 1);
+            
+            let bap = 'BAP-2';
+            if (p.dan > 190 && p.dan <= 250) bap = 'BAP-3';
+            else if (p.dan > 250) bap = 'BAP-4';
+            
+            switch(p.funcao) {
+                case 'passante': add(bap, 1); add('Suporte FDS-60', 1); break;
+                case 'curva':
+                case 'ancoragem_inter': add(bap, 1); add('Olhal M12', 2); add(`Alça ${specs.cor}`, 2); break;
+                case 'ancoragem_inicio':
+                case 'ancoragem_fim': add(bap, 1); add('Olhal M12', 1); add(`Alça ${specs.cor}`, 1); break;
+                case 'ceo': add(bap, 2); add('Suporte CEO', 1); add('Caixa CEO', 1); break;
+                case 'reserva': add(bap, 2); add('Cruzeta Reserva', 1); break;
+            }
+            if (i > 0) distTotal += postes[i-1].latlng.distanceTo(p.latlng);
+        });
+
+        if (distTotal > 0) add(`Cabo ${tipoCabo} (m)`, Math.ceil(distTotal * 1.1));
+
+        const tbody = document.querySelector('#bomTable tbody');
+        tbody.innerHTML = '';
+        for (let m in mat) tbody.innerHTML += `<tr><td>${m}</td><td style="text-align:right"><span class="qtd-badge">${mat[m]}</span></td></tr>`;
+    }
+
+    function exportarProjeto() {
+        const dados = {
+            config: { cabo: document.getElementById('cabo-tipo').value, fo: document.getElementById('cabo-fo').value },
+            postes: postes.map(p => ({ lat: p.latlng.lat, lng: p.latlng.lng, dan: p.dan, funcao: p.funcao, idVisivel: p.idVisivel }))
+        };
+        const blob = new Blob([JSON.stringify(dados)], {type: 'application/json'});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `projeto_fibra_${new Date().getTime()}.fiber`;
+        link.click();
+    }
+
+    function importarProjeto(event) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dados = JSON.parse(e.target.result);
+            postes.forEach(p => map.removeLayer(p.marker));
+            postes = [];
+            document.getElementById('cabo-tipo').value = dados.config.cabo;
+            document.getElementById('cabo-fo').value = dados.config.fo;
+            dados.postes.forEach(pDados => {
+                adicionarPoste(L.latLng(pDados.lat, pDados.lng), pDados);
+            });
+            if (postes.length > 0) map.panTo(postes[0].latlng);
+        };
+        reader.readAsText(event.target.files[0]);
+    }
+
+    window.onload = initMap;
+</script>
+
+</body>
+</html>
