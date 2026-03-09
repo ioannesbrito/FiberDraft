@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <style>
         :root { --primary: #2563eb; --primary-hover: #1d4ed8; --dark: #0f172a; --panel: #1e293b; --text: #f1f5f9; --accent: #fbbf24; }
@@ -27,6 +28,8 @@
         .btn-green { background: #10b981; color: white; }
         .btn-outline { background: transparent; border: 1px solid #475569; color: #94a3b8; font-size: 11px; padding: 8px; }
         .btn-red { background: #e11d48; color: white; margin-top: 20px; }
+        .btn-purple { background: #7c3aed; color: white; }
+        .btn-amber { background: #d97706; color: white; }
         
         .bom-table { width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 10px; }
         .bom-table th { text-align: left; padding: 8px; color: #94a3b8; border-bottom: 2px solid #475569; }
@@ -40,13 +43,92 @@
         .shape-diamond { transform: rotate(45deg); }
         .marker-label { position: absolute; top: -20px; font-weight: bold; color: white; background: rgba(0,0,0,0.7); padding: 1px 4px; border-radius: 3px; font-size: 10px; white-space: nowrap; pointer-events: none; }
 
+        /* Seleção de poste */
+        @keyframes pulseRing {
+            0%   { transform: scale(1);   opacity: 1; }
+            70%  { transform: scale(2.2); opacity: 0; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .marker-selected-ring {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 22px; height: 22px;
+            margin: -11px 0 0 -11px;
+            border-radius: 50%;
+            border: 3px solid #facc15;
+            animation: pulseRing 1.2s ease-out infinite;
+            pointer-events: none;
+        }
+        .marker-pin.selected {
+            border: 2px solid #facc15 !important;
+            box-shadow: 0 0 0 3px #facc15, 0 0 12px #facc15aa !important;
+            z-index: 9999;
+        }
+
         .legend { background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 8px; color: white; border: 1px solid #475569; font-size: 11px; }
         .legend i { width: 12px; height: 12px; float: left; margin-right: 8px; border: 1px solid #fff; }
 
         /* Estilo dos Rótulos de Distância */
         .dist-label { background: white; color: black; border: 1px solid #2563eb; border-radius: 4px; padding: 1px 4px; font-size: 10px; font-weight: bold; white-space: nowrap; }
 
-        .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .toolbar-kmz { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+
+        /* ── NOVAS FEATURES ── */
+
+        /* Indicador de rede ativa */
+        .rede-indicator {
+            font-size: 11px; padding: 7px 10px; border-radius: 6px;
+            border-left: 4px solid #3b82f6; background: #0f172a;
+            color: #60a5fa; margin-bottom: 12px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .rede-indicator-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        }
+
+        /* Lista de redes no painel */
+        .rede-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: 6px; cursor: pointer;
+            margin-bottom: 6px; border: 2px solid #475569;
+            background: #0f172a; transition: all 0.15s;
+        }
+        .rede-item:hover { background: #1e3a5f; }
+        .rede-item.ativa { border-color: var(--rede-cor, #3b82f6); background: #1a2e4a; }
+        .rede-item-cor { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+        .rede-item-nome { flex: 1; font-size: 12px; color: #cbd5e1; }
+        .rede-item.ativa .rede-item-nome { color: white; font-weight: bold; }
+        .rede-item-del { background: none; border: none; color: #ef4444; cursor: pointer; padding: 0 2px; font-size: 16px; line-height: 1; }
+
+        /* Botão Derivar */
+        #btn-derivar {
+            display: none; background: #7c3aed; color: white;
+            width: 100%; padding: 10px 12px; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: bold; margin-top: 10px;
+            font-size: 13px; align-items: center; justify-content: center; gap: 8px;
+        }
+        #btn-derivar:hover { background: #6d28d9; }
+
+        /* Marcadores KMZ */
+        .kmz-wrapper { position: relative; }
+        .kmz-emoji { font-size: 20px; line-height: 1; display: block; text-align: center; }
+        .kmz-label {
+            position: absolute; top: -18px; left: 22px;
+            background: rgba(251,191,36,0.95); color: #0f172a;
+            padding: 1px 5px; border-radius: 3px; font-size: 10px;
+            white-space: nowrap; font-weight: bold; pointer-events: none;
+            border: 1px solid #d97706;
+        }
+
+        /* Mapa: banner de rede ativa */
+        .map-rede-banner {
+            background: rgba(15,23,42,0.88);
+            color: white; padding: 6px 12px; border-radius: 6px;
+            font-size: 12px; font-weight: bold;
+            border: 2px solid #3b82f6;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -54,10 +136,30 @@
 <div class="sidebar">
     <h2>FiberDraft Pro</h2>
 
+    <!-- Toolbar original -->
     <div class="toolbar">
-        <button class="btn btn-outline" onclick="exportarProjeto()">💾 Salvar Projeto</button>
-        <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">📂 Abrir Projeto</button>
+        <button class="btn btn-outline" onclick="exportarProjeto()">Salvar Projeto</button>
+        <button class="btn btn-outline" onclick="document.getElementById('importFile').click()">Abrir Projeto</button>
         <input type="file" id="importFile" style="display:none" accept=".fiber" onchange="importarProjeto(event)">
+    </div>
+
+    <!-- Nova toolbar KMZ -->
+    <div class="toolbar-kmz">
+        <button class="btn btn-outline" onclick="document.getElementById('kmzFile').click()">Importar KMZ/KML</button>
+        <button class="btn btn-outline" id="btn-limpar-kmz" onclick="limparKMZ()" style="display:none; color:#fbbf24; border-color:#fbbf24;">🗑️ Limpar Pins KMZ</button>
+        <input type="file" id="kmzFile" style="display:none" accept=".kmz,.kml" onchange="importarKMZ(event)">
+    </div>
+
+    <!-- Indicador de rede ativa -->
+    <div class="rede-indicator" id="rede-ativa-indicator">
+        <span class="rede-indicator-dot" id="rede-indicator-dot" style="background:#3b82f6"></span>
+        <span>Editando: <strong id="rede-nome-atual">Principal</strong></span>
+    </div>
+
+    <!-- Painel de Redes / Derivações (novo) -->
+    <div class="card" style="border-left-color:#7c3aed;">
+        <h3>Redes / Derivações</h3>
+        <div id="redes-lista"></div>
     </div>
     
     <div class="card">
@@ -91,6 +193,10 @@
             <option value="ceo">Caixa de Emenda (CEO)</option>
             <option value="reserva">Reserva Técnica</option>
         </select>
+
+        <!-- Botão Derivar — aparece apenas quando funcao = CEO -->
+        <button id="btn-derivar" onclick="iniciarDerivacao()">Derivar Nova Rede deste CEO</button>
+
         <button class="btn" onclick="deletarPoste()" style="background:#4b5563; font-size:11px;">× Remover Poste</button>
     </div>
 
@@ -113,16 +219,151 @@
 <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
 
 <script>
-    let map, postes = [], linhaRede, distLabels = [], selecionadoIdx = null;
+    // ═══════════════════════════════════════════════════════
+    //  GERENCIAMENTO DE REDES (novo)
+    // ═══════════════════════════════════════════════════════
+    const REDE_CORES = ['#3b82f6', '#f97316', '#10b981', '#eab308', '#ec4899', '#06b6d4', '#8b5cf6', '#ef4444'];
 
+    let redesData = [{
+        id: 0,
+        nome: 'Principal',
+        cor: '#3b82f6',
+        postes: [],
+        polyline: null,
+        distLabels: [],
+        ceoPaiRedeId: null,
+        ceoPaiPosteId: null
+    }];
+    let redeAtivaId = 0;
+
+    // Variáveis globais que apontam para a rede ativa (mantém compatibilidade com código original)
+    let postes    = redesData[0].postes;
+    let linhaRede = null;          // será setado em initMap
+    let distLabels = redesData[0].distLabels;
+
+    // Variáveis originais mantidas
+    let map, selecionadoIdx = null;
+
+    // KMZ / KML
+    let kmzMarkers = [];
+
+    function getRedeAtiva()    { return redesData.find(r => r.id === redeAtivaId); }
+    function getRedeById(id)   { return redesData.find(r => r.id === id); }
+    function getProximoRedeId(){ return redesData.reduce((max, r) => Math.max(max, r.id), 0) + 1; }
+
+    /** Troca a rede ativa; atualiza ponteiros globais */
+    function setRedeAtiva(id) {
+        // Remove destaque do poste selecionado na rede atual antes de trocar
+        if (selecionadoIdx !== null) {
+            const p = postes.find(p => p.id === selecionadoIdx);
+            if (p) p.marker.setIcon(criarIcone(p.funcao, p.idVisivel, false));
+        }
+        redeAtivaId = id;
+        const rede  = getRedeAtiva();
+        postes      = rede.postes;
+        linhaRede   = rede.polyline;
+        distLabels  = rede.distLabels;
+        selecionadoIdx = null;
+        document.getElementById('editor-poste').style.display = 'none';
+        atualizarUIRedes();
+    }
+
+    /** Cria uma nova derivação a partir do CEO selecionado */
+    function iniciarDerivacao() {
+        if (selecionadoIdx === null) return;
+        const ceoPoste   = postes[selecionadoIdx];
+        const ceoPaiRedeId  = redeAtivaId;
+        const ceoPaiPosteId = ceoPoste.id;
+
+        const novoId = getProximoRedeId();
+        const cor    = REDE_CORES[novoId % REDE_CORES.length];
+        const nome   = `Derivação ${novoId}`;
+
+        const novaPolyline = L.polyline([], { color: cor, weight: 3, dashArray: '5, 10' }).addTo(map);
+
+        const novaRede = {
+            id: novoId,
+            nome: nome,
+            cor: cor,
+            postes: [],
+            polyline: novaPolyline,
+            distLabels: [],
+            ceoPaiRedeId: ceoPaiRedeId,
+            ceoPaiPosteId: ceoPaiPosteId
+        };
+        redesData.push(novaRede);
+
+        // Ativa a nova rede
+        setRedeAtiva(novoId);
+
+        // Adiciona o primeiro poste da derivação sobre o CEO pai
+        adicionarPoste(ceoPoste.latlng, { funcao: 'ancoragem_inicio', dan: 190, idVisivel: 1 });
+
+        calcularBoM();
+    }
+
+    /** Exclui uma derivação */
+    function deletarRede(id) {
+        if (id === 0) { alert('A rede principal não pode ser removida.'); return; }
+        if (!confirm(`Remover ${getRedeById(id).nome} e todos os seus postes?`)) return;
+        const rede = getRedeById(id);
+        rede.postes.forEach(p => map.removeLayer(p.marker));
+        rede.distLabels.forEach(l => map.removeLayer(l));
+        map.removeLayer(rede.polyline);
+        redesData = redesData.filter(r => r.id !== id);
+        if (redeAtivaId === id) setRedeAtiva(0);
+        else atualizarUIRedes();
+        calcularBoM();
+    }
+
+    /** Atualiza painel lateral de redes e o indicador de rede ativa */
+    function atualizarUIRedes() {
+        const ativa = getRedeAtiva();
+
+        // Indicador no topo
+        document.getElementById('rede-nome-atual').textContent = ativa.nome;
+        document.getElementById('rede-indicator-dot').style.background = ativa.cor;
+        document.getElementById('rede-ativa-indicator').style.borderLeftColor = ativa.cor;
+
+        // Banner no mapa
+        if (window._mapBanner) {
+            const bannerEl = document.querySelector('.map-rede-banner');
+            if (bannerEl) {
+                bannerEl.textContent = `${ativa.nome}`;
+                bannerEl.style.borderColor = ativa.cor;
+                bannerEl.style.color = ativa.cor;
+            }
+        }
+
+        // Lista de redes
+        const lista = document.getElementById('redes-lista');
+        lista.innerHTML = '';
+        redesData.forEach(rede => {
+            const isAtiva = rede.id === redeAtivaId;
+            const div = document.createElement('div');
+            div.className = 'rede-item' + (isAtiva ? ' ativa' : '');
+            div.style.setProperty('--rede-cor', rede.cor);
+            div.innerHTML = `
+                <span class="rede-item-cor" style="background:${rede.cor}"></span>
+                <span class="rede-item-nome">${rede.nome} <span style="color:#475569;font-size:10px;">(${rede.postes.length}p)</span></span>
+                ${rede.id !== 0 ? `<button class="rede-item-del" onclick="event.stopPropagation();deletarRede(${rede.id})">×</button>` : ''}
+            `;
+            div.onclick = () => setRedeAtiva(rede.id);
+            lista.appendChild(div);
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  MAPA — igual ao original, com ajustes mínimos
+    // ═══════════════════════════════════════════════════════
     const configSimbologia = {
-        passante: { cor: '#94a3b8', shape: 'shape-circle' },
-        curva: { cor: '#ef4444', shape: 'shape-diamond' },
+        passante:         { cor: '#94a3b8', shape: 'shape-circle' },
+        curva:            { cor: '#ef4444', shape: 'shape-diamond' },
         ancoragem_inicio: { cor: '#ef4444', shape: 'shape-square' },
-        ancoragem_fim: { cor: '#ef4444', shape: 'shape-square' },
-        ancoragem_inter: { cor: '#ef4444', shape: 'shape-square' },
-        ceo: { cor: '#a855f7', shape: 'shape-circle' },
-        reserva: { cor: '#eab308', shape: 'shape-circle' }
+        ancoragem_fim:    { cor: '#ef4444', shape: 'shape-square' },
+        ancoragem_inter:  { cor: '#ef4444', shape: 'shape-square' },
+        ceo:              { cor: '#a855f7', shape: 'shape-circle' },
+        reserva:          { cor: '#eab308', shape: 'shape-circle' }
     };
 
     function initMap() {
@@ -136,9 +377,13 @@
             .on('markgeocode', e => map.fitBounds(e.geocode.bbox))
             .addTo(map);
 
-        linhaRede = L.polyline([], {color: '#3b82f6', weight: 3, dashArray: '5, 10'}).addTo(map);
+        // Polyline da rede principal
+        redesData[0].polyline = L.polyline([], {color: '#3b82f6', weight: 3, dashArray: '5, 10'}).addTo(map);
+        linhaRede = redesData[0].polyline;
+
         map.on('click', e => adicionarPoste(e.latlng));
         
+        // Legenda (original mantida)
         const legend = L.control({position: 'bottomright'});
         legend.onAdd = () => {
             const div = L.DomUtil.create('div', 'legend');
@@ -149,19 +394,35 @@
             return div;
         };
         legend.addTo(map);
+
+        // Banner de rede ativa no mapa
+        const bannerCtrl = L.control({position: 'topleft'});
+        bannerCtrl.onAdd = () => {
+            const div = L.DomUtil.create('div', 'map-rede-banner');
+            div.textContent = 'Principal';
+            return div;
+        };
+        bannerCtrl.addTo(map);
+        window._mapBanner = true;
+
+        atualizarUIRedes();
     }
 
-    function criarIcone(funcao, id) {
+    function criarIcone(funcao, id, selecionado = false) {
         const config = configSimbologia[funcao];
+        const sel    = selecionado ? ' selected' : '';
+        const ring   = selecionado ? '<span class="marker-selected-ring"></span>' : '';
         return L.divIcon({
             className: 'custom-icon',
-            html: `<div class="marker-pin ${config.shape}" style="background:${config.cor}">
+            html: `<div class="marker-pin ${config.shape}${sel}" style="background:${config.cor}">
                      <span class="marker-label">P${id}</span>
+                     ${ring}
                    </div>`,
             iconSize: [22, 22], iconAnchor: [11, 11]
         });
     }
 
+    // ── adicionarPoste: idêntico ao original (usa `postes` global → rede ativa)
     function adicionarPoste(latlng, dadosExistentes = null) {
         const idVisivel = (dadosExistentes) ? dadosExistentes.idVisivel : postes.length + 1;
         
@@ -177,7 +438,6 @@
             }).addTo(map)
         };
 
-        // Evento de Arrastar Atualizado
         poste.marker.on('drag', function(event) {
             poste.latlng = event.target.getLatLng();
             atualizarLinha();
@@ -195,15 +455,30 @@
         postes.push(poste);
         atualizarLinha();
         calcularBoM();
+        atualizarUIRedes(); // atualiza contagem de postes na lista de redes
     }
 
     function abrirEditor(idx) {
+        // Remove destaque do poste anteriormente selecionado (busca em todas as redes)
+        if (selecionadoIdx !== null) {
+            redesData.forEach(rede => {
+                const anterior = rede.postes.find(p => p.id === selecionadoIdx && rede.id === redeAtivaId);
+                if (anterior) anterior.marker.setIcon(criarIcone(anterior.funcao, anterior.idVisivel, false));
+            });
+        }
+
         selecionadoIdx = idx;
         const p = postes[idx];
+
+        // Aplica destaque no novo selecionado
+        p.marker.setIcon(criarIcone(p.funcao, p.idVisivel, true));
+
         document.getElementById('editor-poste').style.display = 'block';
         document.getElementById('p-label-id').innerText = p.idVisivel;
         document.getElementById('p-dan').value = p.dan;
         document.getElementById('p-funcao').value = p.funcao;
+        // Mostra botão Derivar apenas para CEO
+        document.getElementById('btn-derivar').style.display = p.funcao === 'ceo' ? 'flex' : 'none';
     }
 
     function updatePoste() {
@@ -211,7 +486,9 @@
         const p = postes[selecionadoIdx];
         p.dan = parseInt(document.getElementById('p-dan').value);
         p.funcao = document.getElementById('p-funcao').value;
-        p.marker.setIcon(criarIcone(p.funcao, p.idVisivel));
+        p.marker.setIcon(criarIcone(p.funcao, p.idVisivel, true));
+        // Mostra/oculta botão Derivar
+        document.getElementById('btn-derivar').style.display = p.funcao === 'ceo' ? 'flex' : 'none';
         calcularBoM();
     }
 
@@ -221,7 +498,6 @@
         postes.splice(selecionadoIdx, 1);
         selecionadoIdx = null;
         document.getElementById('editor-poste').style.display = 'none';
-        
         postes.forEach((p, i) => {
             p.id = i;
             p.idVisivel = i + 1;
@@ -229,21 +505,21 @@
         });
         atualizarLinha();
         calcularBoM();
+        atualizarUIRedes();
     }
 
+    // ── atualizarLinha: atualiza apenas a rede ativa
     function atualizarLinha() {
-        linhaRede.setLatLngs(postes.map(p => p.latlng));
+        const rede = getRedeAtiva();
+        rede.polyline.setLatLngs(rede.postes.map(p => p.latlng));
         
-        // Limpar rótulos de distância antigos
-        distLabels.forEach(label => map.removeLayer(label));
-        distLabels = [];
+        rede.distLabels.forEach(label => map.removeLayer(label));
+        rede.distLabels.length = 0; // limpa sem quebrar referência
 
-        // Adicionar novos rótulos
-        for (let i = 0; i < postes.length - 1; i++) {
-            const p1 = postes[i].latlng;
-            const p2 = postes[i+1].latlng;
+        for (let i = 0; i < rede.postes.length - 1; i++) {
+            const p1 = rede.postes[i].latlng;
+            const p2 = rede.postes[i+1].latlng;
             const dist = p1.distanceTo(p2).toFixed(1);
-            
             const middle = L.latLng((p1.lat + p2.lat) / 2, (p1.lng + p2.lng) / 2);
             const label = L.marker(middle, {
                 icon: L.divIcon({
@@ -253,10 +529,11 @@
                 }),
                 interactive: false
             }).addTo(map);
-            distLabels.push(label);
+            rede.distLabels.push(label);
         }
     }
 
+    // ── calcularBoM: agrega TODAS as redes
     function calcularBoM() {
         const tipoCabo = document.getElementById('cabo-tipo').value;
         const fo = parseInt(document.getElementById('cabo-fo').value);
@@ -268,38 +545,50 @@
         
         let mat = {};
         const add = (n, q) => mat[n] = (mat[n] || 0) + q;
-        let distTotal = 0;
 
-        postes.forEach((p, i) => {
-            add('Plaqueta NDU 009', 1);
-            
-            let bap = 'BAP-2';
-            if (p.dan > 190 && p.dan <= 250) bap = 'BAP-3';
-            else if (p.dan > 250) bap = 'BAP-4';
-            
-            switch(p.funcao) {
-                case 'passante': add(bap, 1); add('Suporte FDS-60', 1); break;
-                case 'curva':
-                case 'ancoragem_inter': add(bap, 1); add('Olhal M12', 2); add(`Alça ${specs.cor}`, 2); break;
-                case 'ancoragem_inicio':
-                case 'ancoragem_fim': add(bap, 1); add('Olhal M12', 1); add(`Alça ${specs.cor}`, 1); break;
-                case 'ceo': add(bap, 2); add('Suporte CEO', 1); add('Caixa CEO', 1); break;
-                case 'reserva': add(bap, 2); add('Cruzeta Reserva', 1); break;
-            }
-            if (i > 0) distTotal += postes[i-1].latlng.distanceTo(p.latlng);
+        redesData.forEach(rede => {
+            let distRede = 0;
+            rede.postes.forEach((p, i) => {
+                add('Plaqueta NDU 009', 1);
+                let bap = 'BAP-2';
+                if (p.dan > 190 && p.dan <= 250) bap = 'BAP-3';
+                else if (p.dan > 250) bap = 'BAP-4';
+                
+                switch(p.funcao) {
+                    case 'passante':       add(bap, 1); add('Suporte FDS-60', 1); break;
+                    case 'curva':
+                    case 'ancoragem_inter': add(bap, 1); add('Olhal M12', 2); add(`Alça ${specs.cor}`, 2); break;
+                    case 'ancoragem_inicio':
+                    case 'ancoragem_fim':   add(bap, 1); add('Olhal M12', 1); add(`Alça ${specs.cor}`, 1); break;
+                    case 'ceo':    add(bap, 2); add('Suporte CEO', 1); add('Caixa CEO', 1); break;
+                    case 'reserva': add(bap, 2); add('Cruzeta Reserva', 1); break;
+                }
+                if (i > 0) distRede += rede.postes[i-1].latlng.distanceTo(p.latlng);
+            });
+            if (distRede > 0) add(`Cabo ${tipoCabo} (m)`, Math.ceil(distRede * 1.1));
         });
-
-        if (distTotal > 0) add(`Cabo ${tipoCabo} (m)`, Math.ceil(distTotal * 1.1));
 
         const tbody = document.querySelector('#bomTable tbody');
         tbody.innerHTML = '';
-        for (let m in mat) tbody.innerHTML += `<tr><td>${m}</td><td style="text-align:right"><span class="qtd-badge">${mat[m]}</span></td></tr>`;
+        for (let m in mat)
+            tbody.innerHTML += `<tr><td>${m}</td><td style="text-align:right"><span class="qtd-badge">${mat[m]}</span></td></tr>`;
     }
 
+    // ── exportarProjeto: salva todas as redes
     function exportarProjeto() {
         const dados = {
             config: { cabo: document.getElementById('cabo-tipo').value, fo: document.getElementById('cabo-fo').value },
-            postes: postes.map(p => ({ lat: p.latlng.lat, lng: p.latlng.lng, dan: p.dan, funcao: p.funcao, idVisivel: p.idVisivel }))
+            redes: redesData.map(rede => ({
+                id: rede.id,
+                nome: rede.nome,
+                cor: rede.cor,
+                ceoPaiRedeId: rede.ceoPaiRedeId,
+                ceoPaiPosteId: rede.ceoPaiPosteId,
+                postes: rede.postes.map(p => ({
+                    lat: p.latlng.lat, lng: p.latlng.lng,
+                    dan: p.dan, funcao: p.funcao, idVisivel: p.idVisivel
+                }))
+            }))
         };
         const blob = new Blob([JSON.stringify(dados)], {type: 'application/json'});
         const link = document.createElement('a');
@@ -308,22 +597,153 @@
         link.click();
     }
 
+    // ── importarProjeto: suporta formato novo (redes) e legado (postes)
     function importarProjeto(event) {
         const reader = new FileReader();
         reader.onload = function(e) {
             const dados = JSON.parse(e.target.result);
-            postes.forEach(p => map.removeLayer(p.marker));
-            postes = [];
-            document.getElementById('cabo-tipo').value = dados.config.cabo;
-            document.getElementById('cabo-fo').value = dados.config.fo;
-            dados.postes.forEach(pDados => {
-                adicionarPoste(L.latLng(pDados.lat, pDados.lng), pDados);
+
+            // Limpar tudo
+            redesData.forEach(rede => {
+                rede.postes.forEach(p => map.removeLayer(p.marker));
+                rede.distLabels.forEach(l => map.removeLayer(l));
+                if (rede.polyline) map.removeLayer(rede.polyline);
             });
+            redesData = [];
+
+            document.getElementById('cabo-tipo').value = dados.config.cabo;
+            document.getElementById('cabo-fo').value   = dados.config.fo;
+
+            if (dados.redes) {
+                // Formato novo
+                dados.redes.forEach((rd, idx) => {
+                    const cor = rd.cor || REDE_CORES[idx % REDE_CORES.length];
+                    const poly = L.polyline([], { color: cor, weight: 3, dashArray: '5, 10' }).addTo(map);
+                    redesData.push({
+                        id: rd.id, nome: rd.nome, cor: cor,
+                        postes: [], polyline: poly, distLabels: [],
+                        ceoPaiRedeId: rd.ceoPaiRedeId, ceoPaiPosteId: rd.ceoPaiPosteId
+                    });
+                });
+
+                dados.redes.forEach((rd, idx) => {
+                    const alvo = redesData[idx];
+                    // Aponta ponteiros para esta rede temporariamente
+                    redeAtivaId = alvo.id;
+                    postes      = alvo.postes;
+                    linhaRede   = alvo.polyline;
+                    distLabels  = alvo.distLabels;
+                    rd.postes.forEach(pDados => adicionarPoste(L.latLng(pDados.lat, pDados.lng), pDados));
+                });
+
+            } else if (dados.postes) {
+                // Formato legado
+                const cor  = REDE_CORES[0];
+                const poly = L.polyline([], { color: cor, weight: 3, dashArray: '5, 10' }).addTo(map);
+                redesData.push({
+                    id: 0, nome: 'Principal', cor: cor,
+                    postes: [], polyline: poly, distLabels: [],
+                    ceoPaiRedeId: null, ceoPaiPosteId: null
+                });
+                redeAtivaId = 0;
+                postes     = redesData[0].postes;
+                linhaRede  = redesData[0].polyline;
+                distLabels = redesData[0].distLabels;
+                dados.postes.forEach(pDados => adicionarPoste(L.latLng(pDados.lat, pDados.lng), pDados));
+            }
+
+            setRedeAtiva(0);
             if (postes.length > 0) map.panTo(postes[0].latlng);
         };
         reader.readAsText(event.target.files[0]);
     }
 
+    // ═══════════════════════════════════════════════════════
+    //  IMPORTAR KMZ / KML  (novo)
+    // ═══════════════════════════════════════════════════════
+    async function importarKMZ(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Remove pins anteriores
+        kmzMarkers.forEach(m => map.removeLayer(m));
+        kmzMarkers = [];
+
+        try {
+            let kmlText;
+
+            if (file.name.toLowerCase().endsWith('.kmz')) {
+                // KMZ = ZIP com KML dentro
+                const ab  = await file.arrayBuffer();
+                const zip = await JSZip.loadAsync(ab);
+                const kmlEntry = Object.values(zip.files).find(f => f.name.toLowerCase().endsWith('.kml'));
+                if (!kmlEntry) { alert('Nenhum arquivo KML encontrado dentro do KMZ.'); return; }
+                kmlText = await kmlEntry.async('string');
+            } else {
+                // KML direto
+                kmlText = await file.text();
+            }
+
+            const parser  = new DOMParser();
+            const kmlDoc  = parser.parseFromString(kmlText, 'text/xml');
+            const marks   = kmlDoc.querySelectorAll('Placemark');
+            let count = 0;
+            const bounds  = [];
+
+            marks.forEach(pm => {
+                const nameEl = pm.querySelector('name');
+                const name   = nameEl ? nameEl.textContent.trim() : `Pin ${count + 1}`;
+
+                // Tenta <Point><coordinates>
+                const ptEl = pm.querySelector('Point > coordinates');
+                if (!ptEl) return;
+
+                const parts = ptEl.textContent.trim().split(',');
+                if (parts.length < 2) return;
+                const lng = parseFloat(parts[0]);
+                const lat = parseFloat(parts[1]);
+                if (isNaN(lat) || isNaN(lng)) return;
+
+                const marker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: '',
+                        html: `<div class="kmz-wrapper">
+                                 <span class="kmz-emoji">📍</span>
+                                 <span class="kmz-label">${name}</span>
+                               </div>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 24]
+                    })
+                }).addTo(map);
+
+                marker.bindPopup(`<b>📍 ${name}</b><br><small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small>`);
+                kmzMarkers.push(marker);
+                bounds.push([lat, lng]);
+                count++;
+            });
+
+            if (count > 0) {
+                map.fitBounds(bounds, { padding: [40, 40] });
+                document.getElementById('btn-limpar-kmz').style.display = '';
+                alert(`✅ ${count} pin(s) importado(s) do KMZ/KML.`);
+            } else {
+                alert('Nenhum ponto/pin encontrado no arquivo.');
+            }
+
+        } catch (err) {
+            console.error(err);
+            alert('Erro ao processar o arquivo: ' + err.message);
+        }
+        event.target.value = '';
+    }
+
+    function limparKMZ() {
+        kmzMarkers.forEach(m => map.removeLayer(m));
+        kmzMarkers = [];
+        document.getElementById('btn-limpar-kmz').style.display = 'none';
+    }
+
+    // ═══════════════════════════════════════════════════════
     window.onload = initMap;
 </script>
 
