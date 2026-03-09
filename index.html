@@ -121,7 +121,21 @@
             border: 1px solid #d97706;
         }
 
-        /* Mapa: banner de rede ativa */
+        /* Resumo de Funções */
+        .funcao-resumo { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .funcao-chip {
+            display: flex; align-items: center; gap: 5px;
+            background: #0f172a; border: 1px solid #475569;
+            border-radius: 20px; padding: 4px 10px 4px 6px;
+            font-size: 11px; color: #cbd5e1; transition: all 0.2s;
+        }
+        .funcao-chip-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .funcao-chip-count {
+            background: #1e293b; color: white; font-weight: bold;
+            border-radius: 10px; padding: 1px 6px; font-size: 11px;
+            margin-left: 2px;
+        }
+        .funcao-chip-zero { opacity: 0.35; }
         .map-rede-banner {
             background: rgba(15,23,42,0.88);
             color: white; padding: 6px 12px; border-radius: 6px;
@@ -198,6 +212,11 @@
         <button id="btn-derivar" onclick="iniciarDerivacao()">Derivar Nova Rede deste CEO</button>
 
         <button class="btn" onclick="deletarPoste()" style="background:#4b5563; font-size:11px;">× Remover Poste</button>
+    </div>
+
+    <div class="card" style="border-left-color:#10b981;">
+        <h3>Resumo de Funções</h3>
+        <div class="funcao-resumo" id="funcaoResumo"></div>
     </div>
 
     <div class="card" style="flex-grow: 1;">
@@ -329,7 +348,7 @@
         if (window._mapBanner) {
             const bannerEl = document.querySelector('.map-rede-banner');
             if (bannerEl) {
-                bannerEl.textContent = `${ativa.nome}`;
+                bannerEl.textContent = `✏️ ${ativa.nome}`;
                 bannerEl.style.borderColor = ativa.cor;
                 bannerEl.style.color = ativa.cor;
             }
@@ -572,6 +591,48 @@
         tbody.innerHTML = '';
         for (let m in mat)
             tbody.innerHTML += `<tr><td>${m}</td><td style="text-align:right"><span class="qtd-badge">${mat[m]}</span></td></tr>`;
+
+        atualizarResumoFuncoes();
+    }
+
+    // ── Resumo de Funções por tipo
+    const FUNCAO_META = [
+        { key: 'passante',         label: 'Passante',       cor: '#94a3b8', icon: '●' },
+        { key: 'curva',            label: 'Curva',          cor: '#ef4444', icon: '◆' },
+        { key: 'ancoragem_inicio', label: 'Anc. Início',    cor: '#ef4444', icon: '■' },
+        { key: 'ancoragem_fim',    label: 'Anc. Fim',       cor: '#ef4444', icon: '■' },
+        { key: 'ancoragem_inter',  label: 'Anc. Inter.',    cor: '#f97316', icon: '■' },
+        { key: 'ceo',              label: 'CEO',            cor: '#a855f7', icon: '●' },
+        { key: 'reserva',          label: 'Reserva',        cor: '#eab308', icon: '●' }
+    ];
+
+    function atualizarResumoFuncoes() {
+        // Conta por tipo em todas as redes
+        const contagem = {};
+        FUNCAO_META.forEach(f => contagem[f.key] = 0);
+        redesData.forEach(rede => {
+            rede.postes.forEach(p => {
+                if (contagem[p.funcao] !== undefined) contagem[p.funcao]++;
+            });
+        });
+
+        const total = Object.values(contagem).reduce((a, b) => a + b, 0);
+        const container = document.getElementById('funcaoResumo');
+
+        if (total === 0) {
+            container.innerHTML = '<span style="color:#475569;font-size:11px;">Nenhum poste inserido ainda.</span>';
+            return;
+        }
+
+        container.innerHTML = FUNCAO_META
+            .filter(f => contagem[f.key] > 0)   // só mostra os que existem
+            .map(f => `
+                <div class="funcao-chip">
+                    <span class="funcao-chip-dot" style="background:${f.cor}"></span>
+                    <span>${f.label}</span>
+                    <span class="funcao-chip-count" style="background:${f.cor}22; color:${f.cor}; border:1px solid ${f.cor}55;">${contagem[f.key]}</span>
+                </div>`)
+            .join('');
     }
 
     // ── exportarProjeto: salva todas as redes
